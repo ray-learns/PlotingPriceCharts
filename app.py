@@ -7,10 +7,10 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
 
 # 1. PAGE SETUP
-st.set_page_config(page_title="Universal Price Chart", page_icon="📈", layout="wide")
+st.set_page_config(page_title="My Price Chart", page_icon="📈", layout="wide")
 
 # 2. TITLE & DESCRIPTION
-st.title("📊 Universal Price Analysis Tool")
+st.title("📊 My Price Analysis Tool")
 st.markdown("""
 **How to use:**
 1. Upload any CSV file containing a **Date** column and a **Price/Close** column.
@@ -25,7 +25,7 @@ def create_pdf(df, price_col, fig):
     
     # Title & Metadata
     p.setFont("Helvetica-Bold", 16)
-    p.drawString(100, 750, "Custom Price Analysis Report")
+    p.drawString(100, 750, "Price Report")
     p.setFont("Helvetica", 12)
     p.drawString(100, 725, f"Data Column: {price_col}")
     latest_val = df[price_col].iloc[-1]
