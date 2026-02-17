@@ -89,7 +89,7 @@ if uploaded_file is not None:
             # Add SMAs if selected
             if show_sma10:
                 df['SMA10'] = df[price_col].rolling(window=10).mean()
-                fig.add_trace(go.Scatter(x=df[date_col], y=df['SMA10'], name='10-day SMA', line=dict(color='orange', width=1.5, dash='dot')))
+                fig.add_trace(go.Scatter(x=df[date_col], y=df['SMA10'], name='10-day SMA', line=dict(color='green', width=1.5, dash='dot')))
             
             if show_sma20:
                 df['SMA20'] = df[price_col].rolling(window=20).mean()
