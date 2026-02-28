@@ -11,10 +11,10 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
 
 # 1. PAGE SETUP
-st.set_page_config(page_title="NIFTY 50 Predictor", page_icon="📈", layout="wide")
+st.set_page_config(page_title="NIFTY 50 ARIMA Analyzer", page_icon="🏛️", layout="wide")
 
-st.title("🏛️ NIFTY 50 Interactive Forecasting Dashboard")
-st.markdown("Select a NIFTY 50 company to analyze historical trends and generate **ARIMA (1,1,1)** forecasts.")
+st.title("🏛️ NIFTY 50 Forecast Table & Analysis")
+st.markdown("Select an ARIMA model to generate a 15-day forecast table for NIFTY 50 stocks.")
 
 # 2. NIFTY 50 TICKER DICTIONARY
 nifty50_dict = {
@@ -38,86 +38,120 @@ nifty50_dict = {
 }
 
 # 3. SIDEBAR CONTROLS
-st.sidebar.header("Select Stock")
+st.sidebar.header("Data Settings")
 selected_name = st.sidebar.selectbox("Choose a Company", options=list(nifty50_dict.keys()))
 ticker = nifty50_dict[selected_name]
+period = st.sidebar.selectbox("History Period", options=["6mo", "1y", "2y"], index=1)
 
-period = st.sidebar.selectbox("History Period", options=["6mo", "1y", "2y", "5y"], index=1)
+st.sidebar.header("Model Selection")
+# Option to select between ARIMA(1,1,1) and ARIMA(2,1,2)
+model_choice = st.sidebar.radio("Select ARIMA Order", ("ARIMA(1,1,1)", "ARIMA(2,1,2)"))
+arima_order = (1, 1, 1) if model_choice == "ARIMA(1,1,1)" else (2, 1, 2)
 
-st.sidebar.header("Technical Indicators")
-show_sma10 = st.sidebar.checkbox("10-day SMA")
-show_sma20 = st.sidebar.checkbox("20-day SMA")
+# 4. PDF GENERATION FUNCTION
+def create_pdf(df, ticker_name, model_name, forecast_df, fig):
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    
+    # Header
+    p.setFont("Helvetica-Bold", 16)
+    p.drawString(100, 750, f"Financial Analysis Report: {ticker_name}")
+    p.setFont("Helvetica", 12)
+    p.drawString(100, 730, f"Model Used: {model_name}")
+    p.drawString(100, 715, f"Latest Closing Price: ₹{df['Close'].iloc[-1]:,.2f}")
 
-st.sidebar.header("ARIMA Forecast")
-do_forecast = st.sidebar.checkbox("🔮 Predict Next 15 Days")
+    # Chart Image
+    try:
+        img_bytes = fig.to_image(format="png", width=600, height=300)
+        p.drawImage(ImageReader(io.BytesIO(img_bytes)), 50, 380, width=500, height=250)
+    except:
+        p.drawString(100, 450, "Chart could not be rendered in PDF.")
 
-# 4. DATA FETCHING (Using yfinance)
+    # Forecast Table in PDF
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(100, 350, "15-Day Forecast Table")
+    p.setFont("Helvetica", 10)
+    
+    y = 330
+    p.drawString(120, y, "Date")
+    p.drawString(250, y, "Predicted Price (₹)")
+    p.line(100, y-5, 500, y-5)
+    
+    y -= 20
+    for index, row in forecast_df.iterrows():
+        if y < 50: # New page if table is too long
+            p.showPage()
+            y = 750
+        p.drawString(120, y, row['Date'].strftime('%Y-%m-%d'))
+        p.drawString(250, y, f"{row['Predicted Price']:,.2f}")
+        y -= 15
+
+    p.showPage()
+    p.save()
+    buffer.seek(0)
+    return buffer
+
+# 5. DATA FETCHING
 @st.cache_data
 def get_live_data(symbol, time_period):
     data = yf.download(symbol, period=time_period)
     data = data.reset_index()
-    # Flatten multi-index columns if they exist (common in newer yfinance versions)
     if isinstance(data.columns, pd.MultiIndex):
-        data.columns = [col[0] if col[1] == '' else col[0] for col in data.columns]
+        data.columns = [col[0] for col in data.columns]
     return data
 
-with st.spinner(f"Fetching data for {selected_name}..."):
-    df = get_live_data(ticker, period)
+df = get_live_data(ticker, period)
 
 if not df.empty:
-    # 5. FORECASTING ENGINE
-    forecast_df = None
-    if do_forecast:
-        try:
-            # ARIMA(1,1,1)
-            model = ARIMA(df['Close'], order=(1, 1, 1))
-            res = model.fit()
-            f_steps = 15
-            forecast = res.forecast(steps=f_steps)
-            
-            last_date = df['Date'].max()
-            f_dates = [last_date + datetime.timedelta(days=i) for i in range(1, f_steps + 1)]
-            forecast_df = pd.DataFrame({'Date': f_dates, 'Close': forecast})
-        except Exception as e:
-            st.sidebar.error(f"ARIMA Error: {e}")
-
-    # 6. PLOTTING
+    # 6. PLOTTING (Actual Price Only)
     fig = go.Figure()
-
-    # Historical
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name='Actual Price', line=dict(color='#00d1ff')))
-
-    # SMAs
-    if show_sma10:
-        df['SMA10'] = df['Close'].rolling(window=10).mean()
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['SMA10'], name='10-day SMA', line=dict(color='orange', dash='dot')))
-    if show_sma20:
-        df['SMA20'] = df['Close'].close.rolling(window=20).mean()
-        fig.add_trace(go.Scatter(x=df['Date'], y=df['SMA20'], name='20-day SMA', line=dict(color='yellow', dash='dot')))
-
-    # Forecast
-    if forecast_df is not None:
-        # Join last historical point to forecast
-        f_x = [df['Date'].iloc[-1]] + list(forecast_df['Date'])
-        f_y = [df['Close'].iloc[-1]] + list(forecast_df['Close'])
-        fig.add_trace(go.Scatter(x=f_x, y=f_y, name='ARIMA Forecast', line=dict(color='#FF00FF', width=3, dash='dash')))
-
-    fig.update_layout(template="plotly_dark", title=f"{selected_name} ({ticker}) Analysis", hovermode="x unified")
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name='Actual Price', line=dict(color='#00d1ff', width=2)))
+    
+    fig.update_layout(
+        template="plotly_dark", 
+        title=f"Historical Price: {selected_name}",
+        xaxis_title="Date",
+        yaxis_title="Closing Price (₹)",
+        hovermode="x unified"
+    )
     st.plotly_chart(fig, use_container_width=True)
 
-    # 7. METRICS & DOWNLOAD
-    c1, c2, c3 = st.columns(3)
-    current_p = df['Close'].iloc[-1]
-    prev_p = df['Close'].iloc[-2]
-    change = current_p - prev_p
+    # 7. FORECASTING & TABLE
+    st.write("---")
+    st.subheader(f"15-Day Forecast Results ({model_choice})")
     
-    c1.metric("Current Price", f"₹{current_p:,.2f}", f"{change:+.2f}")
-    c2.metric("52-Week High", f"₹{df['Close'].max():,.2f}")
-    c3.metric("52-Week Low", f"₹{df['Close'].min():,.2f}")
+    with st.spinner(f"Calculating {model_choice}..."):
+        try:
+            model = ARIMA(df['Close'], order=arima_order)
+            model_fit = model.fit()
+            forecast_steps = 15
+            forecast = model_fit.forecast(steps=forecast_steps)
+            
+            # Generate future dates
+            last_date = df['Date'].max()
+            future_dates = [last_date + datetime.timedelta(days=i) for i in range(1, forecast_steps + 1)]
+            
+            # Create the forecast dataframe for the table
+            forecast_df = pd.DataFrame({
+                'Date': future_dates,
+                'Predicted Price': forecast
+            })
+            
+            # Display Table in App
+            st.table(forecast_df.style.format({'Predicted Price': '{:,.2f}'}))
 
-    # PDF Download (Simplified for demo)
-    if st.button("Generate Executive PDF Report"):
-        st.success("Report generated! (Ensure reportlab & kaleido are in requirements.txt)")
+            # 8. REPORT GENERATION
+            if st.button("Generate & Download PDF Report"):
+                pdf_data = create_pdf(df, selected_name, model_choice, forecast_df, fig)
+                st.download_button(
+                    label="📥 Click here to Save PDF",
+                    data=pdf_data,
+                    file_name=f"{selected_name}_Forecast.pdf",
+                    mime="application/pdf"
+                )
+                
+        except Exception as e:
+            st.error(f"Model Error: {e}")
 
 else:
-    st.error("Could not fetch data. Please check your internet connection.")
+    st.error("Failed to retrieve data.")
