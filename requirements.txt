@@ -1,5 +1,7 @@
 streamlit
 pandas
+yfinance
 plotly
+statsmodels
 reportlab
 kaleido==0.2.1
